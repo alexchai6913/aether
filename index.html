@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0C0E12" />
+<title>AETHER-01 // Autonomous Habitat</title>
+
+<!-- Tailwind CSS (CDN) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { ink: '#0C0E12', amber: '#F59E0B', mint: '#10B981' },
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300..800&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet" />
+
+<!-- GSAP + ScrollTrigger -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+
+<!-- Lucide icons -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #0C0E12; }
+  ::selection { background: #F59E0B; color: #0C0E12; }
+
+  /* Glassmorphism */
+  .glass {
+    background: rgba(255,255,255,0.03);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* Header solid state */
+  .header-solid {
+    background: rgba(12,14,18,0.72);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  /* Kinetic title chars — each clipped so it reveals from below */
+  .hch-clip { display: inline-block; overflow: hidden; padding-bottom: 0.1em; margin-bottom: -0.1em; }
+  .hch { display: inline-block; will-change: transform, opacity, filter; }
+
+  /* Energy mesh nodes — transform-origin for spring scale */
+  .mesh-node { transform-box: fill-box; transform-origin: center; }
+
+  /* Topographic lines: hidden until scrub-drawn */
+  .topo { stroke-dasharray: 1; stroke-dashoffset: 1; }
+
+  @keyframes blink { 50% { opacity: 0.2; } }
+  .blink { animation: blink 2s ease-in-out infinite; }
+
+  /* Telemetry bento — hand-drawn SVG icons, infinite loops (Lottie-style) */
+  @keyframes tm-sun-spin { to { transform: rotate(360deg); } }
+  .tm-sun {
+    transform-box: fill-box; transform-origin: center;
+    animation: tm-sun-spin 16s linear infinite;
+  }
+
+  @keyframes tm-wave-slide { to { transform: translateX(-32px); } }
+  .tm-wave { animation: tm-wave-slide 7s linear infinite; }
+  .tm-wave--back { animation-duration: 11s; }
+  @keyframes tm-bob { 50% { transform: translateY(-2.5px); } }
+  .tm-bob { animation: tm-bob 3.4s ease-in-out infinite; }
+
+  @keyframes tm-turbine {
+    0%   { transform: rotate(0deg);   animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.45); }
+    50%  { transform: rotate(180deg); animation-timing-function: cubic-bezier(0.15, 0.55, 0.45, 1); }
+    100% { transform: rotate(360deg); }
+  }
+  .tm-rotor {
+    transform-box: view-box; transform-origin: 32px 30px;
+    animation: tm-turbine 2.8s infinite;
+  }
+  .tm-rotor--ghost { animation-delay: 0.07s; opacity: 0.16; }
+
+  @keyframes tm-batt-fill { 50% { transform: scaleY(0.45); } }
+  .tm-batt-fill {
+    transform-box: fill-box; transform-origin: center bottom;
+    animation: tm-batt-fill 5s ease-in-out infinite;
+  }
+  @keyframes tm-bolt { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+  .tm-bolt { animation: tm-bolt 1.8s ease-in-out infinite; }
+
+  /* Custom cursor (desktop only) */
+  #cursor {
+    position: fixed; top: 0; left: 0; width: 28px; height: 28px;
+    border: 1px solid rgba(245,158,11,0.9); border-radius: 50%;
+    box-shadow: 0 0 24px rgba(245,158,11,0.35), inset 0 0 8px rgba(245,158,11,0.15);
+    pointer-events: none; z-index: 9999; opacity: 0;
+  }
+  #cursor::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    width: 4px; height: 4px; margin: -2px 0 0 -2px;
+    background: #F59E0B; border-radius: 50%;
+  }
+  @media (pointer: fine) {
+    body.has-cursor, body.has-cursor * { cursor: none; }
+  }
+</style>
+</head>
+
+<body class="bg-ink text-white antialiased">
+
+<!-- Ambient light layer -->
+<div class="pointer-events-none fixed inset-0" style="background:
+  radial-gradient(60% 50% at 50% 0%, rgba(245,158,11,0.05), transparent),
+  radial-gradient(50% 40% at 100% 100%, rgba(16,185,129,0.04), transparent);"></div>
+
+<!-- Custom cursor -->
+<div id="cursor"></div>
+
+<!-- ============ HEADER ============ -->
+<header id="header" class="fixed inset-x-0 top-0 z-50 transition-all duration-500">
+  <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 md:px-10">
+    <a href="#" class="flex items-center gap-3">
+      <svg viewBox="0 0 40 40" class="h-8 w-8" fill="none" stroke="#F59E0B" stroke-width="1.5">
+        <path d="M20 3 L35 11.5 V28.5 L20 37 L5 28.5 V11.5 Z"/>
+        <path d="M14 27 L20 12 L26 27"/>
+        <path d="M17 21.5 H23"/>
+      </svg>
+      <span class="font-mono text-xs tracking-[0.35em]">AETHER-01</span>
+    </a>
+    <nav class="hidden items-center gap-8 font-mono text-[10px] tracking-[0.3em] text-white/50 md:flex">
+      <a href="#systems" class="transition-colors hover:text-amber">SYSTEMS</a>
+      <a href="#reserve" class="transition-colors hover:text-amber">RESERVE</a>
+    </nav>
+    <a href="#reserve" class="glass flex items-center gap-2 px-4 py-2 font-mono text-[10px] tracking-[0.25em] text-white/80 transition-colors hover:text-amber">
+      <i data-lucide="zap" class="h-3 w-3 text-amber"></i>
+      BUILD SLOT 07
+    </a>
+  </div>
+</header>
+
+<!-- ============ SECTION 1 — THE MONOLITH REVEAL ============ -->
+<section id="hero" class="relative h-screen min-h-[640px] w-full overflow-hidden">
+
+  <!-- Background image (Unsplash) -->
+  <div id="heroBg" class="absolute inset-0">
+    <img
+      src="https://images.unsplash.com/photo-1783522271591-e29b05ff38ce?q=80&w=2200&auto=format&fit=crop"
+      alt="Expedition vehicle in rugged terrain"
+      class="h-full w-full object-cover opacity-40" />
+    <div class="absolute inset-0 bg-gradient-to-b from-ink/70 via-ink/20 to-ink"></div>
+  </div>
+
+  <!-- Procedural CAD wireframe -->
+  <svg id="sketch" viewBox="0 0 1200 640" class="absolute inset-0 h-full w-full"
+       preserveAspectRatio="xMidYMid meet" fill="none">
+    <g id="drawGroup" stroke="#F59E0B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Body outline: rear wall, wheel arches, front, roof pod -->
+      <path class="draw" pathLength="1" d="M150 430 L178 430 A72 72 0 0 1 322 430 L818 430 A72 72 0 0 1 962 430 L1044 430 Q1058 430 1058 414 L1058 372 Q1058 344 1034 322 L1000 264 Q994 252 978 252 L880 252 L880 214 Q880 192 858 190 L520 190 Q498 192 496 214 L496 252 L210 252 Q150 252 150 300 L150 430 Z"/>
+      <!-- Wheels -->
+      <circle class="draw" pathLength="1" cx="250" cy="430" r="64"/>
+      <circle class="draw" pathLength="1" cx="250" cy="430" r="42"/>
+      <circle class="draw" pathLength="1" cx="250" cy="430" r="16"/>
+      <circle class="draw" pathLength="1" cx="890" cy="430" r="64"/>
+      <circle class="draw" pathLength="1" cx="890" cy="430" r="42"/>
+      <circle class="draw" pathLength="1" cx="890" cy="430" r="16"/>
+      <!-- Windows -->
+      <path class="draw" pathLength="1" d="M240 272 H420 V328 H240 Z"/>
+      <path class="draw" pathLength="1" d="M640 272 H840 V328 H640 Z"/>
+      <path class="draw" pathLength="1" d="M984 258 L1028 320 L936 320 L936 262 Z"/>
+      <!-- Panel + door lines -->
+      <path class="draw" pathLength="1" d="M150 380 H1044"/>
+      <path class="draw" pathLength="1" d="M640 264 V428"/>
+      <path class="draw" pathLength="1" d="M560 350 H600"/>
+      <!-- Roof solar array grid -->
+      <path class="draw" pathLength="1" d="M500 206 H876"/>
+      <path class="draw" pathLength="1" d="M500 224 H876"/>
+      <path class="draw" pathLength="1" d="M560 194 V248"/>
+      <path class="draw" pathLength="1" d="M640 194 V248"/>
+      <path class="draw" pathLength="1" d="M720 194 V248"/>
+      <path class="draw" pathLength="1" d="M800 194 V248"/>
+      <!-- Antenna -->
+      <path class="draw" pathLength="1" d="M818 190 L818 132 L846 118"/>
+      <!-- Sun -->
+      <circle class="draw" pathLength="1" cx="1118" cy="108" r="22"/>
+      <path class="draw" pathLength="1" d="M1146 108 H1166"/>
+      <path class="draw" pathLength="1" d="M1090 108 H1070"/>
+      <path class="draw" pathLength="1" d="M1118 80 V60"/>
+      <path class="draw" pathLength="1" d="M1118 136 V156"/>
+      <path class="draw" pathLength="1" d="M1138 88 L1153 73"/>
+      <path class="draw" pathLength="1" d="M1098 88 L1083 73"/>
+      <path class="draw" pathLength="1" d="M1138 128 L1153 143"/>
+      <path class="draw" pathLength="1" d="M1098 128 L1083 143"/>
+      <!-- Ground -->
+      <path class="draw" pathLength="1" d="M60 494 H1140"/>
+      <!-- Dimensioning -->
+      <path class="draw" pathLength="1" d="M150 520 H1058"/>
+      <path class="draw" pathLength="1" d="M150 514 V526"/>
+      <path class="draw" pathLength="1" d="M1058 514 V526"/>
+      <path class="draw" pathLength="1" d="M1104 190 V430"/>
+      <path class="draw" pathLength="1" d="M1098 190 H1110"/>
+      <path class="draw" pathLength="1" d="M1098 430 H1110"/>
+    </g>
+    <g fill="#FFFFFF" opacity="0.35" font-family="'JetBrains Mono', monospace" font-size="13" letter-spacing="2">
+      <text x="604" y="548" text-anchor="middle">8.40 M OVERALL</text>
+      <text x="1112" y="312" text-anchor="start">3.18 M H</text>
+    </g>
+  </svg>
+
+  <!-- Headline -->
+  <div id="heroContent" class="absolute inset-x-0 bottom-0 z-10 px-6 pb-16 md:px-10 md:pb-20">
+    <p id="heroKicker" class="font-mono text-[11px] tracking-[0.5em] text-white/50">
+      EXPEDITION MODULE — SOLAR GRID — EST. 2026
+    </p>
+    <h1 id="heroTitle" class="mt-3 font-display text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.95]"></h1>
+    <p id="heroSub" class="mt-4 font-mono text-sm tracking-[0.55em] text-amber md:text-base">// AUTONOMOUS HABITAT</p>
+  </div>
+
+  <div id="scrollCue" class="absolute bottom-8 right-8 z-10 hidden items-center gap-3 font-mono text-[10px] tracking-[0.4em] text-white/40 md:right-10 md:flex">
+    SCROLL <span class="h-px w-16 bg-white/20"></span>
+  </div>
+</section>
+
+<!-- ============ SECTION 1.5 — LIVE TELEMETRY BENTO ============ -->
+<section id="telemetry" class="relative py-28 md:py-40">
+  <div class="mx-auto max-w-7xl px-6 md:px-10">
+
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <p class="reveal font-mono text-[11px] tracking-[0.5em] text-mint">// 00 — LIVE TELEMETRY</p>
+      <p class="reveal hidden items-center gap-2 font-mono text-[10px] tracking-[0.35em] text-white/40 md:flex">
+        <span class="blink h-1.5 w-1.5 rounded-full bg-amber"></span>
+        ONBOARD SENSORS — SYNC 4.2 S
+      </p>
+    </div>
+    <h2 class="reveal mt-4 font-display text-4xl font-medium leading-tight md:text-5xl">
+      The vehicle <span class="text-white/40">reports in.</span>
+    </h2>
+
+    <div class="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+      <!-- T-01 — SOLAR YIELD -->
+      <div class="tm-card reveal glass px-6 py-6">
+        <div class="flex items-center justify-between">
+          <p class="font-mono text-[10px] tracking-[0.3em] text-white/30">T-01</p>
+          <span class="h-1.5 w-1.5 rounded-full bg-amber"></span>
+        </div>
+        <svg viewBox="0 0 64 64" class="mt-5 h-16 w-16" fill="none">
+          <circle cx="32" cy="32" r="14" stroke="#F59E0B" stroke-opacity="0.35" stroke-width="1"/>
+          <circle cx="32" cy="32" r="9" stroke="#F59E0B" stroke-width="1.5"/>
+          <circle cx="32" cy="32" r="3" fill="#F59E0B"/>
+          <g class="tm-sun" stroke="#F59E0B" stroke-width="2" stroke-linecap="round">
+            <line x1="32" y1="8" x2="32" y2="15"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(30 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(60 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(90 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(120 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(150 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(180 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(210 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(240 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(270 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(300 32 32)"/>
+            <line x1="32" y1="8" x2="32" y2="15" transform="rotate(330 32 32)"/>
+          </g>
+        </svg>
+        <p class="mt-5 font-display text-2xl font-medium">2.4 kWp</p>
+        <p class="mt-1.5 font-mono text-[10px] tracking-[0.25em] text-white/40">SOLAR YIELD</p>
+        <p class="mt-0.5 font-mono text-[9px] tracking-[0.18em] text-white/25">ROOF PHOTOVOLTAIC ARRAY</p>
+      </div>
+
+      <!-- T-02 — ATMOSPHERIC WATER -->
+      <div class="tm-card reveal glass px-6 py-6">
+        <div class="flex items-center justify-between">
+          <p class="font-mono text-[10px] tracking-[0.3em] text-white/30">T-02</p>
+          <span class="h-1.5 w-1.5 rounded-full bg-mint"></span>
+        </div>
+        <svg viewBox="0 0 64 64" class="mt-5 h-16 w-16" fill="none">
+          <defs>
+            <clipPath id="tmDropClip">
+              <path d="M32 10 C32 18 20 28 20 42 A12 12 0 0 0 44 42 C44 28 32 18 32 10 Z"/>
+            </clipPath>
+          </defs>
+          <g clip-path="url(#tmDropClip)">
+            <g class="tm-bob">
+              <path class="tm-wave tm-wave--back" fill="rgba(16,185,129,0.16)"
+                d="M-48 37 q 8 -4 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 V 64 L -48 64 Z"/>
+              <path class="tm-wave" fill="rgba(16,185,129,0.4)"
+                d="M-48 41 q 8 -4 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 t 16 0 V 64 L -48 64 Z"/>
+            </g>
+          </g>
+          <path d="M32 10 C32 18 20 28 20 42 A12 12 0 0 0 44 42 C44 28 32 18 32 10 Z" stroke="#10B981" stroke-width="1.5"/>
+        </svg>
+        <p class="mt-5 font-display text-2xl font-medium">6.0 L/day</p>
+        <p class="mt-1.5 font-mono text-[10px] tracking-[0.25em] text-white/40">ATMOSPHERIC WATER</p>
+        <p class="mt-0.5 font-mono text-[9px] tracking-[0.18em] text-white/25">AMBIENT CONDENSER LOOP</p>
+      </div>
+
+      <!-- T-03 — WIND ENTROPY -->
+      <div class="tm-card reveal glass px-6 py-6">
+        <div class="flex items-center justify-between">
+          <p class="font-mono text-[10px] tracking-[0.3em] text-white/30">T-03</p>
+          <span class="h-1.5 w-1.5 rounded-full bg-white/60"></span>
+        </div>
+        <svg viewBox="0 0 64 64" class="mt-5 h-16 w-16" fill="none">
+          <path d="M31.2 34 L32.8 34 L33.3 57 L30.7 57 Z" fill="rgba(255,255,255,0.35)"/>
+          <path d="M22 57 H42" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-linecap="round"/>
+          <g class="tm-rotor tm-rotor--ghost" fill="rgba(255,255,255,0.75)">
+            <path d="M32 27 C34.5 22 34.5 12 32 7 C29.5 12 29.5 22 32 27 Z"/>
+            <path d="M32 27 C34.5 22 34.5 12 32 7 C29.5 12 29.5 22 32 27 Z" transform="rotate(120 32 30)"/>
+            <path d="M32 27 C34.5 22 34.5 12 32 7 C29.5 12 29.5 22 32 27 Z" transform="rotate(240 32 30)"/>
+          </g>
+          <g class="tm-rotor" fill="rgba(255,255,255,0.8)">
+            <path d="M32 27 C34.5 22 34.5 12 32 7 C29.5 12 29.5 22 32 27 Z"/>
+            <path d="M32 27 C34.5 22 34.5 12 32 7 C29.5 12 29.5 22 32 27 Z" transform="rotate(120 32 30)"/>
+            <path d="M32 27 C34.5 22 34.5 12 32 7 C29.5 12 29.5 22 32 27 Z" transform="rotate(240 32 30)"/>
+            <circle cx="32" cy="30" r="3.5" fill="#F59E0B"/>
+          </g>
+        </svg>
+        <p class="mt-5 font-display text-2xl font-medium">3.1 m/s</p>
+        <p class="mt-1.5 font-mono text-[10px] tracking-[0.25em] text-white/40">WIND ENTROPY</p>
+        <p class="mt-0.5 font-mono text-[9px] tracking-[0.18em] text-white/25">HYBRID KINETIC HARVEST</p>
+      </div>
+
+      <!-- T-04 — CORE BATTERY -->
+      <div class="tm-card reveal glass px-6 py-6">
+        <div class="flex items-center justify-between">
+          <p class="font-mono text-[10px] tracking-[0.3em] text-white/30">T-04</p>
+          <span class="h-1.5 w-1.5 rounded-full bg-amber"></span>
+        </div>
+        <svg viewBox="0 0 64 64" class="mt-5 h-16 w-16" fill="none">
+          <rect x="26" y="8" width="12" height="5" rx="1.5" fill="rgba(245,158,11,0.55)"/>
+          <rect x="18" y="13" width="28" height="41" rx="4" stroke="#F59E0B" stroke-width="1.5"/>
+          <rect class="tm-batt-fill" x="21.5" y="16.5" width="21" height="34" rx="2" fill="rgba(245,158,11,0.22)"/>
+          <path class="tm-bolt" d="M35 16 L21 36 L28 36 L24 50 L39 30 L32 30 Z" fill="#F59E0B"/>
+        </svg>
+        <p class="mt-5 font-display text-2xl font-medium">48 V &middot; 300 AH</p>
+        <p class="mt-1.5 font-mono text-[10px] tracking-[0.25em] text-white/40">CORE BATTERY</p>
+        <p class="mt-0.5 font-mono text-[9px] tracking-[0.18em] text-white/25">LIFECPO4 CELL BANK</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ SECTION 2 — THE ENERGY MESH ============ -->
+<section id="systems" class="relative py-28 md:py-40">
+  <div class="mx-auto grid max-w-7xl gap-10 px-6 md:px-10 lg:grid-cols-2 lg:gap-16">
+
+    <!-- Left: typography -->
+    <div>
+      <p class="reveal font-mono text-[11px] tracking-[0.5em] text-mint">// 01 — ENERGY ARCHITECTURE</p>
+      <h2 class="reveal mt-4 font-display text-4xl font-medium leading-tight md:text-5xl">
+        The Closed-Loop<br />
+        <span class="text-mint">Energy Mesh.</span>
+      </h2>
+      <p class="reveal mt-6 max-w-md text-sm leading-relaxed text-white/50">
+        Every AETHER-01 is built around a closed-loop mesh: rooftop photovoltaics
+        charge a 48V bank, which feeds an inverter-loop climate system.
+        Hover the schematic to route the charge.
+      </p>
+      <ul class="reveal mt-10 space-y-3">
+        <li class="glass flex items-center gap-4 px-5 py-4">
+          <i data-lucide="solar-panel" class="h-5 w-5 text-amber"></i>
+          <div>
+            <p class="font-mono text-sm">2.4 kWp</p>
+            <p class="mt-0.5 font-mono text-[10px] tracking-[0.25em] text-white/40">ROOF PHOTOVOLTAIC ARRAY</p>
+          </div>
+        </li>
+        <li class="glass flex items-center gap-4 px-5 py-4">
+          <i data-lucide="battery-charging" class="h-5 w-5 text-amber"></i>
+          <div>
+            <p class="font-mono text-sm">48 V / 300 Ah</p>
+            <p class="mt-0.5 font-mono text-[10px] tracking-[0.25em] text-white/40">LIFECPO4 CELL BANK</p>
+          </div>
+        </li>
+        <li class="glass flex items-center gap-4 px-5 py-4">
+          <i data-lucide="thermometer" class="h-5 w-5 text-mint"></i>
+          <div>
+            <p class="font-mono text-sm">&minus;20&deg;C HOLD</p>
+            <p class="mt-0.5 font-mono text-[10px] tracking-[0.25em] text-white/40">INVERTED-HEAT CLIMATE LOOP</p>
+          </div>
+        </li>
+        <li class="glass flex items-center gap-4 px-5 py-4">
+          <i data-lucide="gauge" class="h-5 w-5 text-mint"></i>
+          <div>
+            <p class="font-mono text-sm">9 H</p>
+            <p class="mt-0.5 font-mono text-[10px] tracking-[0.25em] text-white/40">DUSK-TO-DAWN AUTONOMY</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Right: interactive schematic -->
+    <div class="mesh-card glass relative p-5 md:p-7">
+      <div class="flex items-center justify-between font-mono text-[10px] tracking-[0.35em] text-white/40">
+        <span>FIG. 02 — ENERGY MESH</span>
+        <span class="flex items-center gap-2 text-mint">
+          <span class="blink h-1.5 w-1.5 rounded-full bg-mint"></span> LIVE SIM
+        </span>
+      </div>
+
+      <svg id="meshSvg" viewBox="0 0 600 460" class="mt-4 w-full" fill="none">
+        <defs>
+          <pattern id="dotgrid" width="24" height="24" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1" fill="rgba(255,255,255,0.08)"/>
+          </pattern>
+          <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="5" result="b"/>
+            <feMerge>
+              <feMergeNode in="b"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        <rect width="600" height="460" fill="url(#dotgrid)"/>
+
+        <!-- Base connectors -->
+        <g stroke="rgba(255,255,255,0.12)" stroke-width="2">
+          <path d="M240 106 C 220 180, 160 230, 140 300"/>
+          <path d="M360 106 C 380 180, 440 230, 460 300"/>
+          <path d="M194 340 C 260 402, 340 402, 406 340"/>
+        </g>
+
+        <!-- Flow connectors (animated on hover) -->
+        <g stroke-width="2.5" stroke-linecap="round">
+          <path id="f1" class="flow" style="opacity:0" stroke="#10B981" stroke-dasharray="16 12" filter="url(#glow)" d="M240 106 C 220 180, 160 230, 140 300"/>
+          <path id="f2" class="flow" style="opacity:0" stroke="#F59E0B" stroke-dasharray="16 12" filter="url(#glow)" d="M360 106 C 380 180, 440 230, 460 300"/>
+          <path id="f3" class="flow" style="opacity:0" stroke="#10B981" stroke-dasharray="16 12" filter="url(#glow)" d="M194 340 C 260 402, 340 402, 406 340"/>
+        </g>
+
+        <!-- Junction dots -->
+        <g fill="#F59E0B">
+          <circle cx="240" cy="106" r="3"/>
+          <circle cx="360" cy="106" r="3"/>
+          <circle cx="140" cy="300" r="3"/>
+          <circle cx="460" cy="300" r="3"/>
+          <circle cx="194" cy="340" r="3"/>
+          <circle cx="406" cy="340" r="3"/>
+        </g>
+
+        <!-- NODE: Roof Array -->
+        <g class="mesh-node" transform="translate(300,80)">
+          <rect x="-84" y="-32" width="168" height="58" rx="6" fill="rgba(16,185,129,0.06)" stroke="#10B981" stroke-width="1.5"/>
+          <g stroke="#10B981" stroke-width="1">
+            <path d="M-42 -32 V26"/>
+            <path d="M0 -32 V26"/>
+            <path d="M42 -32 V26"/>
+            <path d="M-84 -13 H84"/>
+            <path d="M-84 7 H84"/>
+          </g>
+          <text x="0" y="56" text-anchor="middle" fill="rgba(255,255,255,0.75)" font-family="'JetBrains Mono',monospace" font-size="11" letter-spacing="2">ROOF ARRAY</text>
+          <text x="0" y="72" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-family="'JetBrains Mono',monospace" font-size="10">2.4 kWp</text>
+        </g>
+
+        <!-- NODE: 48V Cell Bank -->
+        <g class="mesh-node" transform="translate(140,340)">
+          <rect x="-54" y="-42" width="108" height="84" rx="8" fill="rgba(245,158,11,0.06)" stroke="#F59E0B" stroke-width="1.5"/>
+          <path d="M-10 -42 V-50 H10 V-42" stroke="#F59E0B" stroke-width="1.5"/>
+          <path d="M8 -26 L-14 6 L-1 6 L-6 30 L14 -8 L1 -8 Z" fill="#F59E0B" fill-opacity="0.85"/>
+          <text x="0" y="70" text-anchor="middle" fill="rgba(255,255,255,0.75)" font-family="'JetBrains Mono',monospace" font-size="11" letter-spacing="2">48V CELL BANK</text>
+          <text x="0" y="86" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-family="'JetBrains Mono',monospace" font-size="10">300 Ah</text>
+        </g>
+
+        <!-- NODE: Smart Climate -->
+        <g class="mesh-node" transform="translate(460,340)">
+          <rect x="-54" y="-42" width="108" height="84" rx="42" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+          <path d="M0 -22 V8" stroke="#10B981" stroke-width="2"/>
+          <circle cx="0" cy="14" r="8" fill="rgba(16,185,129,0.2)" stroke="#10B981" stroke-width="1.5"/>
+          <g stroke="rgba(255,255,255,0.3)" stroke-width="1">
+            <path d="M12 -16 H20"/>
+            <path d="M12 -8 H20"/>
+            <path d="M12 0 H20"/>
+          </g>
+          <text x="0" y="70" text-anchor="middle" fill="rgba(255,255,255,0.75)" font-family="'JetBrains Mono',monospace" font-size="11" letter-spacing="2">SMART CLIMATE</text>
+          <text x="0" y="86" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-family="'JetBrains Mono',monospace" font-size="10">&minus;20&deg;C HOLD</text>
+        </g>
+      </svg>
+
+      <div class="flex justify-between font-mono text-[10px] tracking-[0.2em] text-white/30">
+        <span>ROOF &rarr; BANK: 1.4 kW</span>
+        <span>BANK &rarr; CLIMATE: 320 W</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SECTION 3 — THE TOPOGRAPHY HORIZON ============ -->
+<section id="reserve" class="relative overflow-hidden pb-0 pt-28 md:pt-40">
+
+  <!-- Topographic contour lines (scrub-drawn) -->
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 h-[40vh] md:h-[50vh]">
+    <svg viewBox="0 0 1440 320" class="h-full w-full" preserveAspectRatio="none" fill="none">
+      <g stroke="#10B981" stroke-width="1">
+        <path class="topo" pathLength="1" stroke-opacity="0.08" d="M0 28 C150 12 320 44 490 28 C660 12 800 46 970 30 C1130 16 1290 46 1440 26"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.12" d="M0 58 C150 42 320 74 490 60 C660 46 800 78 970 62 C1130 48 1290 80 1440 56"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.16" d="M0 88 C150 70 320 104 490 88 C660 74 800 108 970 90 C1130 76 1290 108 1440 84"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.20" d="M0 118 C150 100 320 134 490 118 C660 104 800 138 970 120 C1130 106 1290 138 1440 114"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.24" d="M0 148 C150 130 320 164 490 148 C660 134 800 168 970 150 C1130 136 1290 168 1440 144"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.28" d="M0 178 C150 160 320 194 490 178 C660 164 800 198 970 180 C1130 166 1290 198 1440 174"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.32" d="M0 208 C150 190 320 224 490 208 C660 194 800 228 970 210 C1130 196 1290 228 1440 204"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.36" d="M0 238 C150 220 320 254 490 238 C660 224 800 258 970 240 C1130 226 1290 258 1440 234"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.40" d="M0 268 C150 250 320 284 490 268 C660 254 800 288 970 270 C1130 256 1290 288 1440 264"/>
+        <path class="topo" pathLength="1" stroke-opacity="0.44" d="M0 298 C150 280 320 314 490 298 C660 284 800 318 970 300 C1130 286 1290 318 1440 294"/>
+      </g>
+      <g fill="#FFFFFF" opacity="0.25" font-family="'JetBrains Mono', monospace" font-size="10" letter-spacing="2">
+        <text x="20" y="54">1800 M</text>
+        <text x="20" y="144">1500 M</text>
+        <text x="20" y="234">1200 M</text>
+      </g>
+    </svg>
+    <div class="absolute inset-0 bg-gradient-to-t from-ink via-ink/40 to-transparent"></div>
+  </div>
+
+  <!-- CTA -->
+  <div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center px-6 pb-40 text-center">
+    <p class="font-mono text-[11px] tracking-[0.5em] text-mint">// 03 — FINAL ASSEMBLY</p>
+    <h2 class="mt-4 font-display text-4xl font-medium md:text-6xl">
+      Leave the grid.<br />
+      <span class="text-white/40">Keep the power.</span>
+    </h2>
+    <p class="mt-6 max-w-xl text-sm leading-relaxed text-white/50">
+      Only 12 build slots per year. AETHER-01 production closes when the batch
+      is sealed. No waitlist after that.
+    </p>
+
+    <div id="ctaZone" class="mt-12">
+      <button id="cta"
+        class="glass rounded-full px-14 py-6 font-mono text-sm tracking-[0.4em] will-change-transform">
+        RESERVE BUILD SLOT <i data-lucide="arrow-right" class="ml-1 inline h-4 w-4 text-amber"></i>
+      </button>
+      <p class="mt-4 font-mono text-[10px] tracking-[0.4em] text-white/30">SLOT 07 / 12 &mdash; DEPOSIT $1,500</p>
+    </div>
+  </div>
+
+  <!-- Footer bar -->
+  <footer class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 pb-6 font-mono text-[10px] tracking-[0.3em] text-white/30 md:px-10">
+    <span>&copy; AETHER WORKS 2026</span>
+    <span class="hidden md:inline">47.2552&deg; N &mdash; 122.6499&deg; W</span>
+    <span>BUILD 001 / KALAMATHA FLAT</span>
+  </footer>
+</section>
+
+<!-- ============ CONTROLLER ============ -->
+<script>
+gsap.registerPlugin(ScrollTrigger);
+if (window.lucide) lucide.createIcons();
+
+/* --------------------------------------------------------------
+   01. CUSTOM CURSOR — lerped trailing ring (desktop only)
+   -------------------------------------------------------------- */
+(function () {
+  const el = document.getElementById('cursor');
+  if (!matchMedia('(pointer:fine)').matches) { el.remove(); return; }
+  document.body.classList.add('has-cursor');
+  let x = innerWidth / 2, y = innerHeight / 2, tx = x, ty = y, s = 1, ts = 1;
+  addEventListener('mousemove', e => { tx = e.clientX; ty = e.clientY; });
+  document.querySelectorAll('a, button, .mesh-card, .mesh-node, .tm-card').forEach(t => {
+    t.addEventListener('mouseenter', () => ts = 1.8);
+    t.addEventListener('mouseleave', () => ts = 1);
+  });
+  requestAnimationFrame(function loop() {
+    x += (tx - x) * 0.18; y += (ty - y) * 0.18; s += (ts - s) * 0.18;
+    el.style.transform = `translate(${x}px,${y}px) translate(-50%,-50%) scale(${s})`;
+    el.style.opacity = el.style.opacity ? el.style.opacity : '1';
+    requestAnimationFrame(loop);
+  });
+})();
+
+/* --------------------------------------------------------------
+   02. HERO — CAD draw-on + kinetic headline reveal
+   -------------------------------------------------------------- */
+(function () {
+  const h1 = document.getElementById('heroTitle');
+  h1.innerHTML = 'AETHER-01'.split('').map(ch =>
+    `<span class="hch-clip"><span class="hch">${ch}</span></span>`).join('');
+
+  const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+  tl.fromTo('#heroBg', { scale: 1.15, opacity: 0 },
+      { scale: 1.05, opacity: 1, duration: 2.2, ease: 'power1.out' }, 0)
+    .fromTo('#drawGroup .draw', { strokeDashoffset: 1 },
+      { strokeDashoffset: 0, duration: 1.6, stagger: 0.07, ease: 'power2.inOut' }, 0.35)
+    .fromTo('#heroTitle .hch', { yPercent: 120, opacity: 0, filter: 'blur(10px)' },
+      { yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: 1, stagger: 0.05 }, 2.0)
+    .fromTo('#heroSub', { y: 16, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.8 }, 2.6)
+    .fromTo('#heroKicker', { opacity: 0, y: 8 },
+      { opacity: 1, y: 0, duration: 0.7 }, 1.4)
+    .fromTo('#scrollCue', { opacity: 0 },
+      { opacity: 1, duration: 1 }, 3.0);
+
+  /* Fade hero content out as it leaves */
+  gsap.to('#heroContent', { opacity: 0, y: -60, ease: 'none',
+    scrollTrigger: { trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true } });
+})();
+
+/* --------------------------------------------------------------
+   03. ENERGY MESH — hover flow + spring node scale
+   -------------------------------------------------------------- */
+(function () {
+  const card = document.querySelector('.mesh-card');
+  const flows = gsap.utils.toArray('.flow');
+  const nodes = gsap.utils.toArray('.mesh-node');
+  let flowTweens = [];
+
+  card.addEventListener('mouseenter', () => {
+    gsap.killTweensOf(flows);
+    flowTweens = [];
+    gsap.set(flows, { strokeDashoffset: 0 });
+    gsap.to(flows, { opacity: 1, duration: 0.4, stagger: 0.06 });
+    flows.forEach(f => {
+      flowTweens.push(gsap.to(f, { strokeDashoffset: -28, duration: 0.9, repeat: -1, ease: 'none' }));
+    });
+  });
+
+  card.addEventListener('mouseleave', () => {
+    flowTweens.forEach(t => t.kill());
+    flowTweens = [];
+    gsap.killTweensOf(flows);
+    gsap.set(flows, { strokeDashoffset: 0, opacity: 0 });
+  });
+
+  nodes.forEach(n => {
+    n.addEventListener('mouseenter', () =>
+      gsap.to(n, { scale: 1.12, duration: 0.45, ease: 'back.out(2.5)' }));
+    n.addEventListener('mouseleave', () =>
+      gsap.to(n, { scale: 1, duration: 0.4, ease: 'power2.out' }));
+  });
+})();
+
+/* --------------------------------------------------------------
+   04. SECTION REVEALS + TOPOGRAPHY SCRUB
+   -------------------------------------------------------------- */
+gsap.from('#telemetry .reveal', { y: 48, opacity: 0, duration: 1.1, stagger: 0.12, ease: 'power3.out',
+  scrollTrigger: { trigger: '#telemetry', start: 'top 75%' } });
+
+gsap.from('#systems .reveal', { y: 48, opacity: 0, duration: 1.1, stagger: 0.12, ease: 'power3.out',
+  scrollTrigger: { trigger: '#systems', start: 'top 75%' } });
+
+gsap.from('.mesh-card', { x: 80, opacity: 0, duration: 1.2, ease: 'power3.out',
+  scrollTrigger: { trigger: '#systems', start: 'top 75%' } });
+
+gsap.timeline({ scrollTrigger: { trigger: '#reserve', start: 'top bottom', end: 'bottom bottom', scrub: 1 } })
+  .to('.topo', { strokeDashoffset: 0, duration: 1, stagger: 0.1, ease: 'none' }, 0);
+
+/* --------------------------------------------------------------
+   05. MAGNETIC CTA (vanilla) — pulls toward cursor, elastic snap
+   -------------------------------------------------------------- */
+(function () {
+  const cta = document.getElementById('cta');
+  const zone = document.getElementById('reserve');
+  let hot = false;
+
+  const snap = () => {
+    if (!hot) return;
+    hot = false;
+    cta.style.transition = 'transform 0.9s cubic-bezier(0.18, 1.8, 0.42, 1)';
+    cta.style.transform = 'translate(0,0)';
+  };
+
+  zone.addEventListener('mousemove', e => {
+    const r = cta.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2);
+    const dy = e.clientY - (r.top + r.height / 2);
+    const d = Math.hypot(dx, dy);
+    if (d < 180) {
+      const f = 1 - d / 180;
+      cta.style.transition = 'transform 0.05s linear';
+      cta.style.transform = `translate(${dx * 0.35 * f}px, ${dy * 0.35 * f}px)`;
+      hot = true;
+    } else { snap(); }
+  });
+  zone.addEventListener('mouseleave', snap);
+})();
+
+/* --------------------------------------------------------------
+   06. HEADER STATE
+   -------------------------------------------------------------- */
+const header = document.getElementById('header');
+addEventListener('scroll', () => {
+  header.classList.toggle('header-solid', scrollY > 60);
+}, { passive: true });
+</script>
+</body>
+</html>
